@@ -15,11 +15,13 @@ const PLIC_ENABLE_BASE: usize = 0x2080;
 
 const PLIC_CONTEXT_BASE: usize = 0x20_1000;
 const PLIC_CONTEXT_THRESHOLD: usize = 0x0;
-const PLIC_CONTEXT_CLAIM: usize = 0x4 / core::mem::size_of::<u32>();
 
-const PLIC_ENABLE_HART_OFFSET: usize = 0x100 / core::mem::size_of::<u32>();
-const PLIC_PRIORITY_HART_OFFSET: usize = 0x2000 / core::mem::size_of::<u32>();
-const PLIC_CONTEXT_CLAIM_HART_OFFSET: usize = 0x2000 / core::mem::size_of::<u32>();
+const SIZE_OF_U32: usize = core::mem::size_of::<u32>();
+
+const PLIC_CONTEXT_CLAIM: usize = 0x4 / SIZE_OF_U32;
+const PLIC_ENABLE_HART_OFFSET: usize = 0x100 / SIZE_OF_U32;
+const PLIC_PRIORITY_HART_OFFSET: usize = 0x2000 / SIZE_OF_U32;
+const PLIC_CONTEXT_CLAIM_HART_OFFSET: usize = 0x2000 / SIZE_OF_U32;
 
 struct PlicUnlocked {
     priority_base: &'static mut Mmio<u32>,

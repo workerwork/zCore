@@ -2,10 +2,10 @@
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "riscv64")] {
-mod realtek;
-mod rtlx;
+        mod realtek;
+        mod rtlx;
 
-pub use rtlx::*;
+        pub use rtlx::*;
     }
 }
 

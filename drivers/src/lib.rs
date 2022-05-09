@@ -2,6 +2,7 @@
 
 #![cfg_attr(not(feature = "mock"), no_std)]
 #![feature(doc_cfg)]
+#![feature(slice_take)]
 
 extern crate alloc;
 

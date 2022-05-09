@@ -58,9 +58,18 @@ impl Devicetree {
         props.parent_address_cells = node.prop_u32("#address-cells").unwrap_or(0);
         props.parent_size_cells = node.prop_u32("#size-cells").unwrap_or(0);
 
-        // DFS
-        for child in node.children.iter() {
-            self.walk_inner(child, props, device_node_op);
+        match node.prop_str("status") {
+            Ok("okay") | Err(PropError::NotFound) => {
+                node.children
+                    .iter()
+                    .for_each(|child| self.walk_inner(child, props, device_node_op));
+            }
+            Ok("disabled") => error!("The device {} is disabled!", node.name),
+            Err(e) => error!(
+                "{e:?} when parse devicetree prop `status`,node is {}!",
+                node.name
+            ),
+            _ => {}
         }
     }
 
@@ -115,15 +124,11 @@ impl Devicetree {
 }
 
 /// Combine `cell_num` of 32-bit integers from `cells` into a 64-bit integer.
-fn from_cells(cells: &[u32], cell_num: u32) -> DeviceResult<u64> {
-    if cell_num as usize > cells.len() {
-        return Err(DeviceError::InvalidParam);
+fn from_cells(mut cells: &[u32], cell_num: u32) -> DeviceResult<u64> {
+    match cells.take(..cell_num as usize) {
+        Some(c) => Ok(c.iter().fold(0, |acc, item| acc << 32 | *item as u64)),
+        None => Err(DeviceError::InvalidParam),
     }
-    let mut value = 0;
-    for &c in &cells[..cell_num as usize] {
-        value = value << 32 | c as u64;
-    }
-    Ok(value)
 }
 
 /// Parse the `reg` property, about `reg`: <https://elinux.org/Device_Tree_Usage#How_Addressing_Works>.
