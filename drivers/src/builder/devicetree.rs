@@ -44,12 +44,12 @@ struct Intc {
 }
 
 /// A builder to probe devices and create drivers from device tree.
-pub struct DevicetreeDriverBuilder<M: IoMapper> {
+pub struct DevicetreeDriverBuilder<M: IoMapper + Copy> {
     dt: Devicetree,
     io_mapper: M,
 }
 
-impl<M: IoMapper> DevicetreeDriverBuilder<M> {
+impl<M: IoMapper + Copy> DevicetreeDriverBuilder<M> {
     /// Prepare to parse DTB from the given virtual address.
     pub fn new(dtb_base_vaddr: VirtAddr, io_mapper: M) -> DeviceResult<Self> {
         Ok(Self {
@@ -60,6 +60,11 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
 
     /// Parse the device tree from root, and returns an array of [`Device`] it found.
     pub fn build(&self) -> DeviceResult<Vec<Device>> {
+        // 为 d1 启动 uart5
+        // todo 放在这里是个临时方案
+        #[cfg(feature = "board-d1")]
+        self.pinctrl();
+
         let mut intc_map = BTreeMap::new(); // phandle -> intc
         let mut dev_list = Vec::new(); // devices
 
@@ -147,7 +152,7 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
 #[allow(unused_imports)]
 #[allow(unused_variables)]
 #[allow(unreachable_code)]
-impl<M: IoMapper> DevicetreeDriverBuilder<M> {
+impl<M: IoMapper + Copy> DevicetreeDriverBuilder<M> {
     /// Parse nodes for interrupt controllers.
     fn parse_intc(
         &self,
@@ -243,43 +248,45 @@ impl<M: IoMapper> DevicetreeDriverBuilder<M> {
         props: &InheritProps,
     ) -> DeviceResult<DevWithInterrupt> {
         let interrupts_extended = parse_interrupts(node, props)?;
-        let base_vaddr =
-            parse_reg(node, props).and_then(|(paddr, size)| self.mmap(paddr as _, size as _))?;
 
         use crate::uart::*;
         let dev = Device::Uart(match comp {
             c if c.contains("ns16550a") => {
+                let base_vaddr = parse_reg(node, props)
+                    .and_then(|(paddr, size)| self.mmap(paddr as _, size as _))?;
                 Arc::new(unsafe { Uart16550Mmio::<u8>::new(base_vaddr) })
             }
             #[cfg(feature = "board-d1")]
-            c if c.contains("allwinner,sun20i-uart") => {
-                // 为 d1 启动 uart5
-                #[cfg(feature = "board-d1")]
-                {
-                    use crate::io::{Io, Mmio};
-                    use d1_pac::{ccu, gpio, CCU, GPIO};
-
-                    //let gpio: PhysAddr = GPIO::PTR as _;
-                    //let ccu: PhysAddr = CCU::PTR as _;
-                    let gpio: PhysAddr = GPIO::ptr() as _;
-                    let ccu: PhysAddr = CCU::ptr() as _;
-
-                    let gpio = self.mmap(gpio, core::mem::size_of::<gpio::RegisterBlock>())?;
-                    let ccu = self.mmap(ccu, core::mem::size_of::<ccu::RegisterBlock>())?;
-
-                    let gpio = unsafe { &mut *(gpio as *mut gpio::RegisterBlock) };
-                    gpio.pb_cfg0.write(|w| w.pb4_select().uart5_tx());
-                    gpio.pb_cfg0.write(|w| w.pb5_select().uart5_rx());
-
-                    let ccu = unsafe { &mut *(ccu as *mut ccu::RegisterBlock) };
-                    ccu.uart_bgr
-                        .modify(|_, w| w.uart5_gating().set_bit().uart5_rst().set_bit());
-                }
-                Arc::new(UartAllwinner::new(base_vaddr))
-            }
+            c if c.contains("allwinner,sun20i-uart") => Arc::new(UartAllwinner::new(
+                self.io_mapper,
+                node.prop_str("device_type")?,
+            )),
             _ => return Err(DeviceError::NotSupported),
         });
 
         Ok((dev, interrupts_extended))
+    }
+
+    // pinctrl
+    #[cfg(feature = "board-d1")]
+    fn pinctrl(&self) {
+        use crate::io::{Io, Mmio};
+        use d1_pac::{ccu, gpio, CCU, GPIO};
+
+        //let gpio: PhysAddr = GPIO::PTR as _;
+        //let ccu: PhysAddr = CCU::PTR as _;
+        let gpio: PhysAddr = GPIO::ptr() as _;
+        let ccu: PhysAddr = CCU::ptr() as _;
+
+        let gpio = self.mmap(gpio, core::mem::size_of::<gpio::RegisterBlock>())?;
+        let ccu = self.mmap(ccu, core::mem::size_of::<ccu::RegisterBlock>())?;
+
+        let gpio = unsafe { &mut *(gpio as *mut gpio::RegisterBlock) };
+        gpio.pb_cfg0.write(|w| w.pb4_select().uart5_tx());
+        gpio.pb_cfg0.write(|w| w.pb5_select().uart5_rx());
+
+        let ccu = unsafe { &mut *(ccu as *mut ccu::RegisterBlock) };
+        ccu.uart_bgr
+            .modify(|_, w| w.uart5_gating().set_bit().uart5_rst().set_bit());
     }
 }

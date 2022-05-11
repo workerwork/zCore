@@ -1,12 +1,15 @@
 ﻿#![allow(dead_code)]
 
 use crate::{
-    io::{Io, Mmio},
     scheme::{impl_event_scheme, Scheme, UartScheme},
     utils::EventListener,
     DeviceResult, VirtAddr,
 };
 use spin::Mutex;
+
+use crate::builder::IoMapper;
+use d1_pac::uart;
+use d1_pac::{UART0, UART1, UART2, UART3, UART4, UART5};
 
 pub struct UartAllwinner {
     inner: Mutex<Inner>,
@@ -16,8 +19,20 @@ pub struct UartAllwinner {
 impl_event_scheme!(UartAllwinner);
 
 impl UartAllwinner {
-    pub fn new(base: VirtAddr) -> Self {
-        let inner = Inner(base);
+    pub fn new(io_mapper: impl IoMapper, uart: &str) -> Self {
+        let reg_size = core::mem::size_of::<uart::RegisterBlock>();
+        let uart: usize = match uart {
+            "uart0" => io_mapper.query_or_map(UART0::PTR as _, reg_size).unwrap(),
+            "uart1" => io_mapper.query_or_map(UART1::PTR as _, reg_size).unwrap(),
+            "uart2" => io_mapper.query_or_map(UART2::PTR as _, reg_size).unwrap(),
+            "uart3" => io_mapper.query_or_map(UART3::PTR as _, reg_size).unwrap(),
+            "uart4" => io_mapper.query_or_map(UART4::PTR as _, reg_size).unwrap(),
+            "uart5" => io_mapper.query_or_map(UART5::PTR as _, reg_size).unwrap(),
+            _ => {
+                unimplemented!();
+            }
+        };
+        let inner = Inner(uart);
         inner.init();
         Self {
             inner: Mutex::new(inner),
@@ -52,71 +67,65 @@ impl UartScheme for UartAllwinner {
 
 struct Inner(VirtAddr);
 
-const RBR: usize = 0x00;
-const THR: usize = 0x00;
-const DLL: usize = 0x00;
-const DLH: usize = 0x04;
-const IER: usize = 0x04;
-const IIR: usize = 0x08;
-const FCR: usize = 0x08;
-const LCR: usize = 0x0c;
-const MCR: usize = 0x10;
-const LSR: usize = 0x14;
-const MSR: usize = 0x18;
-const SCH: usize = 0x1c;
-const USR: usize = 0x7c;
-const TFL: usize = 0x80;
-const RFL: usize = 0x84;
-const HSK: usize = 0x88;
-const DMA_REQ_EN: usize = 0x8c;
-const HALT: usize = 0xa4;
-
 impl Inner {
-    /// 初始化串口控制器
+    /// initializes uart controller
     /// BAUD 115200
     /// FIFO ON
     fn init(&self) {
+        let uart = self.uart();
         // disable interrupts
-        self.reg(IER).write(0);
+        uart.ier().reset();
+
         // enable fifo
-        self.reg(FCR).write(0b0001);
+        uart.fcr().write(|w| w.fifoe().set_bit());
         {
-            self.reg(HALT).write(0b0000_0001);
-            self.reg(LCR).write(0b1000_0011);
+            uart.halt.write(|w| w.halt_tx().set_bit());
+            uart.lcr.write(|w| w.dlab().set_bit());
             // 13 for 115200
-            self.reg(DLL).write(13);
-            self.reg(DLH).write(0);
-            // no break | parity disabled | 1 stop bit | 8 data bits
-            self.reg(LCR).write(0b0000_0011);
-            self.reg(HALT).write(0b0000_0110);
+            uart.dll().write(unsafe { |w| w.dll().bits(13) });
+            uart.dlh().write(unsafe { |w| w.dlh().bits(0) });
+            uart.lcr.write(|w| w.dlab().clear_bit());
+            uart.halt.write(|w| {
+                w.halt_tx()
+                    .clear_bit()
+                    .chcfg_at_busy()
+                    .set_bit()
+                    .change_update()
+                    .set_bit()
+            });
         }
+        // no break | parity disabled | 1 stop bit | 8 data bits
+        uart.lcr.write(|w| w.dls().eight());
         // reset fifo
-        self.reg(FCR).write(0b0111);
+        uart.fcr()
+            .write(|w| w.xfifor().set_bit().rfifor().set_bit());
         // uart mode
-        self.reg(MCR).write(0);
+        uart.mcr.write(unsafe { |w| w.bits(0x00) });
         // enable interrupts
-        self.reg(IER).write(1);
+        uart.ier().write(|w| w.erbfi().set_bit());
     }
 
-    /// 接收
+    /// recives
     fn try_recv(&self) -> DeviceResult<Option<u8>> {
-        if (self.reg(LSR).read() & 1) != 0 {
+        if self.uart().lsr.read().dr().is_ready() {
             // u32 -> u8 大到小强转，语义上不安全，但实际逻辑上是安全的
-            Ok(Some(self.reg(RBR).read() as u8))
+            Ok(Some(self.uart().rbr().read().rbr().bits() as u8))
         } else {
             Ok(None)
         }
     }
 
-    /// 发送
+    /// send
     fn send(&self, ch: u8) -> DeviceResult {
         // query mode
-        while (self.reg(LSR).read() & (1 << 5)) == 0 {}
-        self.reg(THR).write(ch as _);
+        while !self.uart().lsr.read().thre().is_empty() {}
+        self.uart()
+            .thr()
+            .write(unsafe { |w| w.thr().bits(ch as _) });
         Ok(())
     }
 
-    /// 重写write_str方法覆盖默认实现
+    /// write_str
     fn write_str(&self, s: &str) -> DeviceResult {
         for b in s.bytes() {
             match b {
@@ -130,8 +139,9 @@ impl Inner {
         Ok(())
     }
 
-    /// 访问寄存器
-    fn reg(&self, offset: usize) -> &mut Mmio<u32> {
-        unsafe { Mmio::from_base(self.0 + offset) }
+    /// Converts a `usize` to a `mutable reference`
+    #[inline]
+    fn uart(&self) -> &mut uart::RegisterBlock {
+        unsafe { &mut *(self.0 as *mut uart::RegisterBlock) }
     }
 }

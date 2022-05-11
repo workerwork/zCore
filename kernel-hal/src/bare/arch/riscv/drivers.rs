@@ -9,6 +9,8 @@ use zcore_drivers::{Device, DeviceResult};
 use crate::common::vm::GenericPageTable;
 use crate::{drivers, mem::phys_to_virt, CachePolicy, MMUFlags, PhysAddr, VirtAddr};
 
+use core::marker::Copy;
+#[derive(Copy, Clone)]
 struct IoMapperImpl;
 
 impl IoMapper for IoMapperImpl {
