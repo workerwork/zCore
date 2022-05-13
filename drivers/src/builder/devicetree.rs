@@ -98,7 +98,7 @@ impl<M: IoMapper + Copy> DevicetreeDriverBuilder<M> {
                 #[cfg(feature = "virtio")]
                 c if c.contains("virtio,mmio") => self.parse_virtio(node, props),
                 c if c.contains("ns16550a") => self.parse_uart(node, comp, props),
-                //#[cfg(feature = "board-d1")]
+                #[cfg(feature = "board-d1")]
                 c if c.contains("allwinner,sun20i-uart") => self.parse_uart(node, comp, props),
                 #[cfg(feature = "board-d1")]
                 c if c.contains("allwinner,sunxi-gmac") => self.parse_ethernet(node, comp, props),
