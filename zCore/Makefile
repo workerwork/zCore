@@ -227,7 +227,7 @@ endif
 
 ifeq ($(ARCH), x86_64)
   gdb := gdb
-else 
+else
   gdb := riscv64-unknown-elf-gdb
 endif
 
