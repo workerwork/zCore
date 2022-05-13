@@ -64,7 +64,7 @@ impl Devicetree {
                     .iter()
                     .for_each(|child| self.walk_inner(child, props, device_node_op));
             }
-            Ok("disabled") => error!("The device {} is disabled!", node.name),
+            Ok("disabled") => info!("The device {} is disabled!", node.name),
             Err(e) => error!(
                 "{e:?} when parse devicetree prop `status`,node is {}!",
                 node.name

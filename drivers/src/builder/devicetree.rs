@@ -98,7 +98,7 @@ impl<M: IoMapper + Copy> DevicetreeDriverBuilder<M> {
                 #[cfg(feature = "virtio")]
                 c if c.contains("virtio,mmio") => self.parse_virtio(node, props),
                 c if c.contains("ns16550a") => self.parse_uart(node, comp, props),
-                #[cfg(feature = "board-d1")]
+                //#[cfg(feature = "board-d1")]
                 c if c.contains("allwinner,sun20i-uart") => self.parse_uart(node, comp, props),
                 #[cfg(feature = "board-d1")]
                 c if c.contains("allwinner,sunxi-gmac") => self.parse_ethernet(node, comp, props),
@@ -278,8 +278,12 @@ impl<M: IoMapper + Copy> DevicetreeDriverBuilder<M> {
         let gpio: PhysAddr = GPIO::ptr() as _;
         let ccu: PhysAddr = CCU::ptr() as _;
 
-        let gpio = self.mmap(gpio, core::mem::size_of::<gpio::RegisterBlock>())?;
-        let ccu = self.mmap(ccu, core::mem::size_of::<ccu::RegisterBlock>())?;
+        let gpio = self
+            .mmap(gpio, core::mem::size_of::<gpio::RegisterBlock>())
+            .unwrap();
+        let ccu = self
+            .mmap(ccu, core::mem::size_of::<ccu::RegisterBlock>())
+            .unwrap();
 
         let gpio = unsafe { &mut *(gpio as *mut gpio::RegisterBlock) };
         gpio.pb_cfg0.write(|w| w.pb4_select().uart5_tx());
