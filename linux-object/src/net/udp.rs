@@ -180,12 +180,12 @@ impl UdpSocketState {
     }
 
     async fn connect(&mut self, endpoint: Endpoint) -> SysResult {
-        #[allow(irrefutable_let_patterns)]
-        if let Endpoint::Ip(ip) = endpoint {
-            self.remote_endpoint = Some(ip);
-            Ok(0)
-        } else {
-            Err(LxError::EINVAL)
+        match endpoint {
+            Endpoint::Ip(ip) => {
+                self.remote_endpoint = Some(ip);
+                Ok(0)
+            }
+            _ => Err(LxError::EINVAL),
         }
     }
 

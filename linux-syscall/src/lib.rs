@@ -15,6 +15,7 @@
 //!
 
 #![no_std]
+#![feature(core_intrinsics)]
 #![deny(warnings, unsafe_code, missing_docs)]
 #![allow(clippy::upper_case_acronyms)]
 
@@ -367,7 +368,7 @@ impl Syscall<'_> {
                 self.sys_setsockopt(a0, a1, a2, self.into_in_userptr(a3).unwrap(), a4)
             }
             Sys::GETSOCKOPT => {
-                self.sys_getsockopt(a0, a1, a2, self.into_out_userptr(a3).unwrap(), a4)
+                self.sys_getsockopt(a0, a1, a2, self.into_out_userptr(a3).unwrap(), self.into_out_userptr(a4).unwrap())
             }
 
             // process
