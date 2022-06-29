@@ -31,7 +31,8 @@ impl Syscall<'_> {
         let _type = match SocketType::try_from(_type) {
             Ok(_type) => _type,
             Err(_) => {
-                error!("invalid type: {_type}");
+                // todo: 加上打印会导致测试用例不过
+                //error!("invalid type: {_type}");
                 return Err(LxError::EINVAL);
             }
         };
